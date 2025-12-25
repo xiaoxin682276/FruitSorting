@@ -10,13 +10,14 @@ import matplotlib
 
 matplotlib.use("Agg")  # 防止Qt界面阻塞
 import matplotlib.pyplot as plt
+
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 微软雅黑
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 # 解决OpenMP库冲突问题
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QMessageBox, QPushButton, QLabel, QHBoxLayout, \
-    QVBoxLayout, QSpinBox
+    QVBoxLayout, QSpinBox,QTableWidget, QTableWidgetItem
 from fruit import Ui_Dialog
 import yolo
 from PyQt5.QtGui import QPixmap
@@ -55,6 +56,9 @@ class myWindow(QWidget, Ui_Dialog):
 
         # 默认趋势图
         self.current_chart_type = "trend"
+
+        self.filter_target = "全部显示"  # 当前筛选目标
+        self.filter_mode = True  # 是否启用筛选
 
     def setupAdditionalUI(self):
 
@@ -141,6 +145,35 @@ class myWindow(QWidget, Ui_Dialog):
 
         main_layout.addLayout(chart_btn_layout, 9, 1, 1, 1)
         # ----------------------------------------------------
+        # ----------- 分类筛选组件（新增）-----------
+        filter_layout = QHBoxLayout()
+        filter_label = QLabel("筛选显示：")
+        filter_label.setStyleSheet("font-size: 12px; color: #666;")
+
+        from PyQt5.QtWidgets import QComboBox
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems(["全部显示", "ripe", "half-ripe", "raw", "未检测到目标"])
+        self.filter_combo.setStyleSheet(
+            "background-color: white; border: 1px solid #ccc; border-radius: 4px; padding: 4px;"
+        )
+
+        self.filter_combo.currentTextChanged.connect(self.onFilterChanged)
+
+        filter_layout.addWidget(filter_label)
+        filter_layout.addWidget(self.filter_combo)
+
+        main_layout.addLayout(filter_layout, 10, 1, 1, 1)
+        # ------------------------------------------
+        self.table = QTableWidget()
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["编号", "文件名", "类别", "置信度", "时间"])
+        self.table.setStyleSheet("background-color: white; border: 1px solid #ddd;")
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)  # 不可编辑
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)  # 选中整行
+        self.table.cellDoubleClicked.connect(self.jumpToSelectedRow)
+
+        # 放到 gridLayout 中（行号你自己选一个空行，比如 11）
+        main_layout.addWidget(self.table, 11, 1, 2, 1)
 
     def modelTraining(self):
 
@@ -213,11 +246,14 @@ class myWindow(QWidget, Ui_Dialog):
 
                 # 记录结果
                 self.detection_results.append({
+                    '编号': self.current_index + 1,
+                    '文件名': os.path.basename(self.path),
                     '图片路径': self.path,
                     '类别': name,
                     '置信度': f"{conf:.2%}" if conf > 0 else "N/A",
                     '时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
+
             else:
                 display_text = result
                 self.statistics['未检测到目标'] += 1
@@ -227,12 +263,39 @@ class myWindow(QWidget, Ui_Dialog):
                     '置信度': "N/A",
                     '时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
+            # ---------------- 筛选逻辑（循环版）----------------
+            if self.filter_target != "全部显示":
+                current_class = name if isinstance(result, tuple) else result
 
+                while current_class != self.filter_target:
+                    self.current_index += 1
+                    if self.current_index >= len(self.image_files):
+                        # 已经没有符合筛选的图片了
+                        self.timer.stop()
+                        QMessageBox.information(self, "提示", f"分拣结束：未找到更多 {self.filter_target} 类别图片")
+                        return
+
+                    # 换下一张继续识别
+                    self.path = self.image_files[self.current_index]
+                    self.label_picture.setPixmap(QPixmap(self.path))
+                    result = yolo.predict(self.path)
+
+                    if isinstance(result, tuple):
+                        name, conf, result_obj = result
+                        current_class = name
+                        display_text = f"{name} (置信度: {conf:.2%})" if conf > 0 else name
+                    else:
+                        display_text = result
+                        current_class = result
+
+                # 找到符合的类别，继续往下显示
+            # ---------------------------------------------------
             self.label_lb.setText(display_text)
             self.updateProgress()
             self.updateStatistics()
             if self.current_index % 2 == 0:  # 每2张刷新一次
                 self.refreshChart()
+            self.refreshTable()
 
         else:
             self.timer.stop()
@@ -479,6 +542,45 @@ class myWindow(QWidget, Ui_Dialog):
 
         fig.savefig(file_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
+
+    def onFilterChanged(self, text):
+        """筛选类别改变"""
+        self.filter_target = text
+        QMessageBox.information(self, "筛选提示", f"当前筛选模式：{text}\n分拣将只显示该类别图片（全部显示则不筛选）")
+
+    def getFilteredResults(self):
+        """获取当前筛选模式下的结果列表"""
+        if self.filter_target == "全部显示":
+            return self.detection_results
+        return [r for r in self.detection_results if r["类别"] == self.filter_target]
+
+    def refreshTable(self):
+        """刷新表格显示"""
+        results = self.getFilteredResults()
+        self.table.setRowCount(len(results))
+
+        for row, item in enumerate(results):
+            self.table.setItem(row, 0, QTableWidgetItem(str(item["编号"])))
+            self.table.setItem(row, 1, QTableWidgetItem(item["文件名"]))
+            self.table.setItem(row, 2, QTableWidgetItem(item["类别"]))
+            self.table.setItem(row, 3, QTableWidgetItem(item["置信度"]))
+            self.table.setItem(row, 4, QTableWidgetItem(item["时间"]))
+
+    def jumpToSelectedRow(self, row, col):
+        """双击表格行 → 跳转到对应编号图片"""
+        results = self.getFilteredResults()
+        if row >= len(results):
+            return
+
+        target = results[row]
+        target_index = int(target["编号"]) - 1  # 编号从1开始，索引从0开始
+
+        # 跳转到该图片
+        self.current_index = target_index
+        self.is_paused = True
+        self.timer.stop()
+        self.pause_button.setText("继续")
+        self.showCurrentImage()
 
 
 if __name__ == '__main__':
