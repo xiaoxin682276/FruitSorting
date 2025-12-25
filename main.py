@@ -5,15 +5,23 @@ from datetime import datetime
 
 from PyQt5.QtCore import QTimer
 
+import matplotlib
+
+matplotlib.use("Agg")  # 防止Qt界面阻塞
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']  # 微软雅黑
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 # 解决OpenMP库冲突问题
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
-from  PyQt5.QtWidgets import QApplication,QWidget,QFileDialog,QMessageBox,QPushButton,QLabel,QHBoxLayout,QVBoxLayout,QSpinBox
-from  fruit import Ui_Dialog
+from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QMessageBox, QPushButton, QLabel, QHBoxLayout, \
+    QVBoxLayout, QSpinBox
+from fruit import Ui_Dialog
 import yolo
 from PyQt5.QtGui import QPixmap
 
-class myWindow(QWidget,Ui_Dialog):
+
+class myWindow(QWidget, Ui_Dialog):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -34,56 +42,57 @@ class myWindow(QWidget,Ui_Dialog):
         self.current_index = 0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.showNextImage)
-        
+
         # 新增功能：统计数据
         self.statistics = {'ripe': 0, 'half-ripe': 0, 'raw': 0, '未检测到目标': 0}
         self.detection_results = []  # 存储检测结果
         self.is_paused = False  # 暂停状态
         self.timer_interval = 1000  # 默认1秒
-        
+
         # 创建额外的UI控件
         self.setupAdditionalUI()
 
-
+        # 默认趋势图
+        self.current_chart_type = "trend"
 
     def setupAdditionalUI(self):
 
         # 在主布局中添加新控件
         main_layout = self.gridLayout
-        
+
         # 进度表示
         self.progress_label = QLabel("进度: 0/0")
         self.progress_label.setStyleSheet("font-size: 12px; color: #666;")
         main_layout.addWidget(self.progress_label, 4, 1, 1, 1)
-        
+
         # 统计信息
         self.stats_label = QLabel("统计: ripe:0 half-ripe:0 raw:0")
         self.stats_label.setStyleSheet("font-size: 12px; color: #666;")
         main_layout.addWidget(self.stats_label, 5, 1, 1, 1)
 
         button_layout = QHBoxLayout()
-        
+
         # 暂停/继续
         self.pause_button = QPushButton("暂停")
         self.pause_button.setStyleSheet(
             "background-color: #FF9800; color: white; border: none; border-radius: 5px; padding: 8px;")
         self.pause_button.clicked.connect(self.togglePause)
         button_layout.addWidget(self.pause_button)
-        
+
         # 导出结果
         self.export_button = QPushButton("导出结果")
         self.export_button.setStyleSheet(
             "background-color: #9C27B0; color: white; border: none; border-radius: 5px; padding: 8px;")
         self.export_button.clicked.connect(self.exportResults)
         button_layout.addWidget(self.export_button)
-        
+
         # 保存图片
         self.save_image_button = QPushButton("保存当前结果")
         self.save_image_button.setStyleSheet(
             "background-color: #607D8B; color: white; border: none; border-radius: 5px; padding: 8px;")
         self.save_image_button.clicked.connect(self.saveCurrentResult)
         button_layout.addWidget(self.save_image_button)
-        
+
         # 速度调整
         speed_layout = QHBoxLayout()
         speed_label = QLabel("速度(毫秒):")
@@ -95,18 +104,50 @@ class myWindow(QWidget,Ui_Dialog):
         self.speed_spinbox.valueChanged.connect(self.changeSpeed)
         speed_layout.addWidget(speed_label)
         speed_layout.addWidget(self.speed_spinbox)
-        
+
         # 将按钮布局添加到主布局
         main_layout.addLayout(button_layout, 6, 1, 1, 1)
         main_layout.addLayout(speed_layout, 7, 1, 1, 1)
 
+        # ---------------- 可视化模块（新增） ----------------
+        # 图表显示区
+        self.chart_label = QLabel("图表区域")
+        self.chart_label.setStyleSheet(
+            "background-color: #ffffff; border: 1px solid #ddd; border-radius: 8px;")
+        self.chart_label.setFixedSize(320, 220)  # 根据你界面调整大小
+        self.chart_label.setScaledContents(True)
+        main_layout.addWidget(self.chart_label, 8, 1, 1, 1)
+
+        # 图表按钮组
+        chart_btn_layout = QHBoxLayout()
+
+        self.btn_bar = QPushButton("柱状图")
+        self.btn_pie = QPushButton("饼图")
+        self.btn_trend = QPushButton("趋势图")
+        self.btn_export_chart = QPushButton("导出图表")
+
+        # 样式（统一风格）
+        for b in [self.btn_bar, self.btn_pie, self.btn_trend, self.btn_export_chart]:
+            b.setStyleSheet(
+                "background-color: #455A64; color: white; border: none; border-radius: 5px; padding: 6px;")
+            chart_btn_layout.addWidget(b)
+
+        # 绑定事件
+        self.btn_bar.clicked.connect(lambda: self.switchChart("bar"))
+        self.btn_pie.clicked.connect(lambda: self.switchChart("pie"))
+        self.btn_trend.clicked.connect(lambda: self.switchChart("trend"))
+        self.btn_export_chart.clicked.connect(self.exportChart)
+
+        main_layout.addLayout(chart_btn_layout, 9, 1, 1, 1)
+        # ----------------------------------------------------
+
     def modelTraining(self):
 
-        yolo.train("E:/IT/bigdata/project/Cover/fruitSorting/data.yaml",2,16,'best')#实际应用需要batch为50
+        yolo.train("E:/IT/bigdata/project/Cover/fruitSorting/data.yaml", 2, 16, 'best')  #实际应用需要batch为50
 
     def maturitySorting(self):
 
-        file_name,_ = QFileDialog.getOpenFileName(self,"选择图片","","Image(*.png *.jpg)")
+        file_name, _ = QFileDialog.getOpenFileName(self, "选择图片", "", "Image(*.png *.jpg)")
         if file_name:
             self.label_picture.setPixmap(QPixmap(file_name))
             result = yolo.predict(file_name)
@@ -120,12 +161,12 @@ class myWindow(QWidget,Ui_Dialog):
                 display_text = result
             self.label_lb.setText(display_text)
         else:
-            QMessageBox.warning(self,"警告","未选择图片")
+            QMessageBox.warning(self, "警告", "未选择图片")
             return
 
     def startSorting(self):
 
-        directory = QFileDialog.getExistingDirectory(self,"选择文件夹")
+        directory = QFileDialog.getExistingDirectory(self, "选择文件夹")
         if directory:
             self.image_files = [
                 os.path.join(directory, f) for f in os.listdir(directory)
@@ -143,17 +184,17 @@ class myWindow(QWidget,Ui_Dialog):
                 self.showCurrentImage()
                 self.timer.start(self.timer_interval)
             else:
-                QMessageBox.warning(self,"警告","文件夹中没有图片")
+                QMessageBox.warning(self, "警告", "文件夹中没有图片")
 
     def showCurrentImage(self):
 
         if self.current_index < len(self.image_files):
             if self.is_paused:
                 return
-                
+
             self.path = self.image_files[self.current_index]
             self.label_picture.setPixmap(QPixmap(self.path))
-            
+
             # 进行预测
             result = yolo.predict(self.path)
             if isinstance(result, tuple):
@@ -162,13 +203,13 @@ class myWindow(QWidget,Ui_Dialog):
                     display_text = f"{name} (置信度: {conf:.2%})"
                 else:
                     display_text = name
-                
+
                 # 更新统计
                 if name in self.statistics:
                     self.statistics[name] += 1
                 else:
                     self.statistics['未检测到目标'] += 1
-                
+
                 # 记录结果
                 self.detection_results.append({
                     '图片路径': self.path,
@@ -185,10 +226,13 @@ class myWindow(QWidget,Ui_Dialog):
                     '置信度': "N/A",
                     '时间': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
-            
+
             self.label_lb.setText(display_text)
             self.updateProgress()
             self.updateStatistics()
+            if self.current_index % 2 == 0:  # 每2张刷新一次
+                self.refreshChart()
+
         else:
             self.timer.stop()
             total = sum(self.statistics.values())
@@ -238,18 +282,18 @@ class myWindow(QWidget,Ui_Dialog):
         if not self.detection_results:
             QMessageBox.warning(self, "警告", "没有检测信息可导出")
             return
-        
+
         file_path, _ = QFileDialog.getSaveFileName(
             self, "保存检测结果", f"检测结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             "CSV Files (*.csv)")
-        
+
         if file_path:
             try:
                 with open(file_path, 'w', newline='', encoding='utf-8-sig') as f:
                     writer = csv.DictWriter(f, fieldnames=['图片路径', '类别', '置信度', '时间'])
                     writer.writeheader()
                     writer.writerows(self.detection_results)
-                
+
                 # 添加统计信息
                 with open(file_path, 'a', newline='', encoding='utf-8-sig') as f:
                     f.write(f"\n统计信息:\n")
@@ -257,7 +301,7 @@ class myWindow(QWidget,Ui_Dialog):
                     f.write(f"half-ripe: {self.statistics['half-ripe']}\n")
                     f.write(f"raw: {self.statistics['raw']}\n")
                     f.write(f"未检测到目标: {self.statistics['未检测到目标']}\n")
-                
+
                 QMessageBox.information(self, "成功", f"结果已导出到: {file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
@@ -267,11 +311,11 @@ class myWindow(QWidget,Ui_Dialog):
         if not hasattr(self, 'path') or not self.path:
             QMessageBox.warning(self, "警告", "没有当前图片可保存")
             return
-        
+
         file_path, _ = QFileDialog.getSaveFileName(
             self, "保存结果图片", f"结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
             "Image Files (*.jpg *.png)")
-        
+
         if file_path:
             try:
                 result_obj, error = yolo.predict_with_image(self.path, file_path)
@@ -281,6 +325,155 @@ class myWindow(QWidget,Ui_Dialog):
                     QMessageBox.information(self, "成功", f"结果图片已保存到: {file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
+
+    def _drawAndShowChart(self, fig, filename="chart_temp.png"):
+        """把matplotlib图保存成png并显示到chart_label"""
+        fig.savefig(filename, dpi=120, bbox_inches='tight')
+        plt.close(fig)
+        self.chart_label.setPixmap(QPixmap(filename))
+        self.current_chart_file = filename  # 用于导出
+
+    def showBarChart(self):
+        """显示柱状图：各类别数量"""
+        labels = ['ripe', 'half-ripe', 'raw', '未检测到目标']
+        values = [self.statistics.get(k, 0) for k in labels]
+
+        fig = plt.figure(figsize=(4, 3))
+        plt.title("Sorting Statistics - Bar")
+        plt.xlabel("Class")
+        plt.ylabel("Count")
+        plt.bar(labels, values)
+        plt.xticks(rotation=20)
+
+        self._drawAndShowChart(fig, "bar_chart.png")
+
+    def showPieChart(self):
+        """显示饼图：各类别占比"""
+        labels = ['ripe', 'half-ripe', 'raw', '未检测到目标']
+        values = [self.statistics.get(k, 0) for k in labels]
+
+        total = sum(values)
+        if total == 0:
+            QMessageBox.warning(self, "提示", "暂无统计数据，无法生成饼图")
+            return
+
+        fig = plt.figure(figsize=(4, 3))
+        plt.title("Sorting Ratio - Pie")
+        plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
+
+        self._drawAndShowChart(fig, "pie_chart.png")
+
+    def showTrendChart(self):
+        """显示趋势图：置信度随图片序号变化"""
+        conf_list = []
+        for item in self.detection_results:
+            conf_str = item.get("置信度", "N/A")
+            if conf_str != "N/A" and "%" in conf_str:
+                try:
+                    conf_value = float(conf_str.replace("%", ""))  # 98.89
+                    conf_list.append(conf_value)
+                except:
+                    pass
+
+        if not conf_list:
+            QMessageBox.warning(self, "提示", "暂无置信度数据，无法生成趋势图")
+            return
+
+        fig = plt.figure(figsize=(4, 3))
+        plt.title("Confidence Trend")
+        plt.xlabel("Index")
+        plt.ylabel("Confidence (%)")
+        plt.plot(conf_list, marker="o", linestyle="-")
+
+        self._drawAndShowChart(fig, "trend_chart.png")
+
+    def exportChart(self):
+        """一次性导出柱状图、饼图、趋势图"""
+        if not self.detection_results and sum(self.statistics.values()) == 0:
+            QMessageBox.warning(self, "提示", "暂无数据，无法导出图表")
+            return
+
+        # 选择保存文件夹
+        folder = QFileDialog.getExistingDirectory(self, "选择导出文件夹")
+        if not folder:
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        try:
+            # 生成三张图（不显示，只保存）
+            self.saveBarChart(os.path.join(folder, f"柱状图_{timestamp}.png"))
+            self.savePieChart(os.path.join(folder, f"饼图_{timestamp}.png"))
+            self.saveTrendChart(os.path.join(folder, f"趋势图_{timestamp}.png"))
+
+            QMessageBox.information(self, "成功", f"三张图表已导出到:\n{folder}")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
+
+    def refreshChart(self):
+        """动态刷新当前显示的图表"""
+        if self.current_chart_type == "bar":
+            self.showBarChart()
+        elif self.current_chart_type == "pie":
+            self.showPieChart()
+        elif self.current_chart_type == "trend":
+            self.showTrendChart()
+
+    def switchChart(self, chart_type):
+        """切换显示图表类型"""
+        self.current_chart_type = chart_type
+        self.refreshChart()
+
+    def saveBarChart(self, file_path):
+        labels = ['ripe', 'half-ripe', 'raw', '未检测到目标']
+        values = [self.statistics.get(k, 0) for k in labels]
+
+        fig = plt.figure(figsize=(4, 3))
+        plt.title("分拣统计柱状图")
+        plt.xlabel("类别")
+        plt.ylabel("数量")
+        plt.bar(labels, values)
+        plt.xticks(rotation=20)
+
+        fig.savefig(file_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    def savePieChart(self, file_path):
+        labels = ['ripe', 'half-ripe', 'raw', '未检测到目标']
+        values = [self.statistics.get(k, 0) for k in labels]
+        total = sum(values)
+
+        fig = plt.figure(figsize=(4, 3))
+        if total == 0:
+            plt.title("暂无数据")
+        else:
+            plt.title("分拣统计比例图")
+            plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
+
+        fig.savefig(file_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    def saveTrendChart(self, file_path):
+        conf_list = []
+        for item in self.detection_results:
+            conf_str = item.get("置信度", "N/A")
+            if conf_str != "N/A" and "%" in conf_str:
+                try:
+                    conf_list.append(float(conf_str.replace("%", "")))
+                except:
+                    pass
+
+        fig = plt.figure(figsize=(4, 3))
+        if not conf_list:
+            plt.title("暂无置信度数据")
+        else:
+            plt.title("置信度变化趋势")
+            plt.xlabel("图片序号")
+            plt.ylabel("置信度(%)")
+            plt.plot(conf_list, marker="o", linestyle="-")
+
+        fig.savefig(file_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
 
 
 if __name__ == '__main__':
