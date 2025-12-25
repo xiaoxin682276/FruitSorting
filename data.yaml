@@ -1,0 +1,8 @@
+path: E:/IT/bigdata/project/Cover/fruitSorting/dataset
+train: train/images
+val: valid/images
+
+names:
+  0: ripe
+  1: half-ripe
+  2: raw
