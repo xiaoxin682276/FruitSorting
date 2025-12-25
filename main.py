@@ -1,8 +1,9 @@
 import sys
 import os
 import csv
+import io
+from PyQt5.QtCore import Qt
 from datetime import datetime
-
 from PyQt5.QtCore import QTimer
 
 import matplotlib
@@ -326,12 +327,16 @@ class myWindow(QWidget, Ui_Dialog):
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
 
-    def _drawAndShowChart(self, fig, filename="chart_temp.png"):
-        """把matplotlib图保存成png并显示到chart_label"""
-        fig.savefig(filename, dpi=120, bbox_inches='tight')
+    def _drawAndShowChart(self, fig):
+        """将matplotlib图保存到内存中并显示到QLabel（不落盘）"""
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=120, bbox_inches='tight')
         plt.close(fig)
-        self.chart_label.setPixmap(QPixmap(filename))
-        self.current_chart_file = filename  # 用于导出
+        buf.seek(0)
+
+        pixmap = QPixmap()
+        pixmap.loadFromData(buf.getvalue())
+        self.chart_label.setPixmap(pixmap)
 
     def showBarChart(self):
         """显示柱状图：各类别数量"""
@@ -345,7 +350,7 @@ class myWindow(QWidget, Ui_Dialog):
         plt.bar(labels, values)
         plt.xticks(rotation=20)
 
-        self._drawAndShowChart(fig, "bar_chart.png")
+        self._drawAndShowChart(fig)
 
     def showPieChart(self):
         """显示饼图：各类别占比"""
@@ -361,7 +366,7 @@ class myWindow(QWidget, Ui_Dialog):
         plt.title("Sorting Ratio - Pie")
         plt.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
 
-        self._drawAndShowChart(fig, "pie_chart.png")
+        self._drawAndShowChart(fig)
 
     def showTrendChart(self):
         """显示趋势图：置信度随图片序号变化"""
@@ -385,7 +390,7 @@ class myWindow(QWidget, Ui_Dialog):
         plt.ylabel("Confidence (%)")
         plt.plot(conf_list, marker="o", linestyle="-")
 
-        self._drawAndShowChart(fig, "trend_chart.png")
+        self._drawAndShowChart(fig)
 
     def exportChart(self):
         """一次性导出柱状图、饼图、趋势图"""
