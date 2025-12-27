@@ -17,10 +17,11 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QMessageBox, QPushButton, QLabel, QHBoxLayout, \
-    QVBoxLayout, QSpinBox,QTableWidget, QTableWidgetItem
+    QVBoxLayout, QSpinBox, QTableWidget, QTableWidgetItem,QTextEdit,QPushButton
 from fruit import Ui_Dialog
 import yolo
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap,QIcon
+from qt_material import apply_stylesheet
 
 
 class myWindow(QWidget, Ui_Dialog):
@@ -28,7 +29,9 @@ class myWindow(QWidget, Ui_Dialog):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle("水果分拣系统")
-
+        self.resize(1300,1150)  # 默认启动大小
+        self.setMinimumSize(900, 650)  # 最小限制，防止挤压
+        self.setWindowIcon(QIcon("icon.ico"))
         self.pushButton_modelTraining.clicked.connect(self.modelTraining)
         self.pushButton_maturitySorting.clicked.connect(self.maturitySorting)
         self.pushButton_startSorting.clicked.connect(self.startSorting)
@@ -59,6 +62,9 @@ class myWindow(QWidget, Ui_Dialog):
 
         self.filter_target = "全部显示"  # 当前筛选目标
         self.filter_mode = True  # 是否启用筛选
+
+        self.applyBeautyStyle()
+        self.log("系统启动完成")
 
     def setupAdditionalUI(self):
 
@@ -175,28 +181,221 @@ class myWindow(QWidget, Ui_Dialog):
         # 放到 gridLayout 中（行号你自己选一个空行，比如 11）
         main_layout.addWidget(self.table, 11, 1, 2, 1)
 
+        # 重置系统
+        self.reset_button = QPushButton("重置系统")
+        self.reset_button.setStyleSheet(
+            "background-color: #E91E63; color: white; border: none; border-radius: 5px; padding: 8px;")
+        self.reset_button.clicked.connect(self.resetAll)
+        button_layout.addWidget(self.reset_button)
+
+        # ---------------- 日志模块（左下角） ----------------
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setPlaceholderText("运行日志将在这里显示...")
+        self.log_box.setStyleSheet("""
+            QTextEdit{
+                background: white;
+                border: 1px solid #dedede;
+                border-radius: 12px;
+                padding: 8px;
+                font-size: 12px;
+                color: #333;
+            }
+        """)
+
+        # 清空日志按钮
+        self.btn_clear_log = QPushButton("清空日志")
+        self.btn_clear_log.setFixedHeight(32)
+
+        # 导出日志按钮
+        self.btn_export_log = QPushButton("导出日志")
+        self.btn_export_log.setFixedHeight(32)
+
+        # 按钮统一样式
+        btn_style = """
+            QPushButton{
+                background:#455A64;
+                color:white;
+                border:none;
+                border-radius:8px;
+                padding:6px 14px;
+                font-size:12px;
+                font-weight:600;
+            }
+            QPushButton:hover{
+                background:#333;
+            }
+        """
+        self.btn_clear_log.setStyleSheet(btn_style)
+        self.btn_export_log.setStyleSheet(btn_style)
+
+        # 绑定事件
+        self.btn_clear_log.clicked.connect(self.log_box.clear)
+        self.btn_export_log.clicked.connect(self.exportLog)
+
+        # 按钮横排
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.btn_clear_log)
+        btn_row.addWidget(self.btn_export_log)
+
+        # 整体布局
+        log_layout = QVBoxLayout()
+        log_layout.addLayout(btn_row)
+        log_layout.addWidget(self.log_box)
+
+        log_widget = QWidget()
+        log_widget.setLayout(log_layout)
+
+        # 放入 gridLayout 左下
+        main_layout.addWidget(log_widget, 4, 0, 10, 1)
+
+    def log(self, msg):
+        """写入日志（自动带时间）"""
+        time_str = datetime.now().strftime("%H:%M:%S")
+        self.log_box.append(f"[{time_str}] {msg}")
+        self.log_box.verticalScrollBar().setValue(self.log_box.verticalScrollBar().maximum())
+
+    def applyBeautyStyle(self):
+        from PyQt5.QtWidgets import QSizePolicy
+        from PyQt5.QtGui import QFont
+
+        # ===== 全局字体 =====
+        self.setFont(QFont("Microsoft YaHei", 10))
+
+        # ===== 主布局边距（非常关键）=====
+        if hasattr(self, "gridLayout"):
+            self.gridLayout.setContentsMargins(28, 20, 28, 20)
+            self.gridLayout.setHorizontalSpacing(22)
+            self.gridLayout.setVerticalSpacing(14)
+
+        # ===== 卡片样式 =====
+        card = """
+        background: white;
+        border: 1px solid #dedede;
+        border-radius: 14px;
+        """
+
+        # 图片显示区
+        if hasattr(self, "label_picture"):
+            self.label_picture.setStyleSheet(card)
+            self.label_picture.setScaledContents(True)
+            self.label_picture.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # 图表显示区
+        if hasattr(self, "chart_label"):
+            self.chart_label.setStyleSheet(card)
+            self.chart_label.setScaledContents(True)
+
+        # 表格卡片化 + 表头优化
+        if hasattr(self, "table"):
+            self.table.setStyleSheet("""
+            QTableWidget{
+                background:white;
+                border:1px solid #dedede;
+                border-radius:14px;
+                gridline-color:#eeeeee;
+            }
+            QTableWidget::item{
+                padding:6px;
+            }
+            QHeaderView::section{
+                background:#f5f5f5;
+                padding:8px;
+                border:none;
+                font-weight:600;
+            }
+            """)
+            self.table.setAlternatingRowColors(True)
+            self.table.verticalHeader().setVisible(False)
+
+        # ===== 输入框统一 =====
+        input_style = """
+        QSpinBox, QComboBox{
+            background:white;
+            border:1px solid #cfcfcf;
+            border-radius:10px;
+            padding:6px;
+            min-height:32px;
+            font-size:13px;
+        }
+        """
+        self.setStyleSheet(self.styleSheet() + input_style)
+
+        # ===== 按钮样式统一 =====
+        def style_btn(btn, color, height=42):
+            btn.setFixedHeight(height)
+            btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color};
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 10px;
+                font-size: 14px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background-color: #3a3a3a;
+            }}
+            """)
+
+        # 主按钮：三色保留，但统一圆角和高度
+        style_btn(self.pushButton_modelTraining, "#F44336", 56)
+        style_btn(self.pushButton_maturitySorting, "#2196F3", 56)
+        style_btn(self.pushButton_startSorting, "#4CAF50", 56)
+
+        # 功能按钮：统一深色系，只保留“暂停/重置”强调
+        if hasattr(self, "pause_button"): style_btn(self.pause_button, "#FF9800", 42)
+        if hasattr(self, "export_button"): style_btn(self.export_button, "#607D8B", 42)
+        if hasattr(self, "save_image_button"): style_btn(self.save_image_button, "#607D8B", 42)
+        if hasattr(self, "reset_button"): style_btn(self.reset_button, "#E91E63", 42)
+
+        # 图表按钮统一
+        for b in [self.btn_bar, self.btn_pie, self.btn_trend, self.btn_export_chart]:
+            style_btn(b, "#455A64", 40)
+
+        # ===== 标签文字样式（进度/统计/类别）=====
+        if hasattr(self, "label_lb"):
+            self.label_lb.setStyleSheet("font-size:14px; color:#333; font-weight:600;")
+        if hasattr(self, "progress_label"):
+            self.progress_label.setStyleSheet("font-size:13px; color:#666;")
+        if hasattr(self, "stats_label"):
+            self.stats_label.setStyleSheet("font-size:13px; color:#666;")
+
+        self.pushButton_modelTraining.setMaximumWidth(700)
+        self.pushButton_maturitySorting.setMaximumWidth(700)
+        self.pushButton_startSorting.setMaximumWidth(700)
+
     def modelTraining(self):
 
         yolo.train("E:/IT/bigdata/project/Cover/fruitSorting/data.yaml", 2, 16, 'best')  #实际应用需要batch为50
 
     def maturitySorting(self):
-
         file_name, _ = QFileDialog.getOpenFileName(self, "选择图片", "", "Image(*.png *.jpg)")
-        if file_name:
-            self.label_picture.setPixmap(QPixmap(file_name))
-            result = yolo.predict(file_name)
-            if isinstance(result, tuple):
-                name, conf, _ = result
-                if conf > 0:
-                    display_text = f"{name} (置信度: {conf:.2%})"
-                else:
-                    display_text = name
-            else:
-                display_text = result
-            self.label_lb.setText(display_text)
-        else:
+        if not file_name:
             QMessageBox.warning(self, "警告", "未选择图片")
             return
+
+        # 先做预测（拿到类别+置信度）
+        result = yolo.predict(file_name)
+
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, "temp_result.jpg")
+
+        yolo.predict_with_image(file_name, temp_path)
+
+        # 显示带框结果图
+        self.label_picture.setPixmap(QPixmap(temp_path))
+
+        # 显示文本结果
+        if isinstance(result, tuple):
+            name, conf, _ = result
+            display_text = f"{name} (置信度: {conf:.2%})" if conf > 0 else name
+        else:
+            display_text = result
+
+        self.label_lb.setText(display_text)
 
     def startSorting(self):
 
@@ -219,6 +418,62 @@ class myWindow(QWidget, Ui_Dialog):
                 self.timer.start(self.timer_interval)
             else:
                 QMessageBox.warning(self, "警告", "文件夹中没有图片")
+
+        self.log(f"选择文件夹：{directory}")
+        self.log(f"开始分拣，共 {len(self.image_files)} 张图片")
+
+    def resetAll(self):
+        """一键重置系统到初始状态"""
+        reply = QMessageBox.question(
+            self, "确认重置", "确定要重置系统吗？\n将清空统计、表格、图表和当前任务。",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # 1) 停止定时器
+        if self.timer.isActive():
+            self.timer.stop()
+
+        # 2) 清空数据
+        self.image_files = []
+        self.current_index = 0
+        self.is_paused = False
+        self.statistics = {'ripe': 0, 'half-ripe': 0, 'raw': 0, '未检测到目标': 0}
+        self.detection_results = []
+
+        # 3) 重置筛选模式
+        self.filter_target = "全部显示"
+        if hasattr(self, "filter_combo"):
+            self.filter_combo.setCurrentIndex(0)
+
+        # 4) 重置 UI 显示
+        self.label_picture.clear()
+        self.label_lb.setText("等待检测...")
+
+        self.progress_label.setText("进度: 0/0")
+        self.stats_label.setText("统计: ripe:0 half-ripe:0 raw:0")
+
+        # 5) 清空表格
+        if hasattr(self, "table"):
+            self.table.setRowCount(0)
+
+        # 6) 清空图表显示
+        if hasattr(self, "chart_label"):
+            self.chart_label.clear()
+            self.chart_label.setText("图表区域")
+
+        # 7) 重置暂停按钮状态
+        self.pause_button.setText("暂停")
+        self.pause_button.setStyleSheet(
+            "background-color: #FF9800; color: white; border: none; border-radius: 5px; padding: 8px;"
+        )
+
+        # 8) 可选：重置图表类型为趋势图
+        self.current_chart_type = "trend"
+
+        QMessageBox.information(self, "完成","重置成功")
+        self.log("系统已重置")
 
     def showCurrentImage(self):
 
@@ -277,8 +532,16 @@ class myWindow(QWidget, Ui_Dialog):
 
                     # 换下一张继续识别
                     self.path = self.image_files[self.current_index]
-                    self.label_picture.setPixmap(QPixmap(self.path))
+
+                    # 预测
                     result = yolo.predict(self.path)
+
+                    import tempfile
+                    temp_dir = tempfile.gettempdir()
+                    temp_path = os.path.join(temp_dir, "temp_sort_result.jpg")
+
+                    yolo.predict_with_image(self.path, temp_path)
+                    self.label_picture.setPixmap(QPixmap(temp_path))
 
                     if isinstance(result, tuple):
                         name, conf, result_obj = result
@@ -303,6 +566,11 @@ class myWindow(QWidget, Ui_Dialog):
             stats_text = f"ripe: {self.statistics['ripe']}, half-ripe: {self.statistics['half-ripe']}, raw: {self.statistics['raw']}"
             QMessageBox.information(self, "提示", f"分拣完毕！\n总共检测: {total}张\n{stats_text}")
 
+        if isinstance(result, tuple):
+            self.log(f"#{self.current_index + 1} {os.path.basename(self.path)} -> {name} ({conf:.2%})")
+        else:
+            self.log(f"#{self.current_index + 1} {os.path.basename(self.path)} -> 未检测到目标")
+
     def showNextImage(self):
 
         if not self.is_paused:
@@ -322,6 +590,11 @@ class myWindow(QWidget, Ui_Dialog):
             self.pause_button.setText("暂停")
             self.pause_button.setStyleSheet(
                 "background-color: #FF9800; color: white; border: none; border-radius: 5px; padding: 8px;")
+
+        if self.is_paused:
+            self.log("已暂停")
+        else:
+            self.log("已继续")
 
     def changeSpeed(self, value):
 
@@ -370,6 +643,8 @@ class myWindow(QWidget, Ui_Dialog):
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"导出失败: {str(e)}")
 
+        self.log(f"导出结果成功：{file_path}")
+
     def saveCurrentResult(self):
 
         if not hasattr(self, 'path') or not self.path:
@@ -389,6 +664,8 @@ class myWindow(QWidget, Ui_Dialog):
                     QMessageBox.information(self, "成功", f"结果图片已保存到: {file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "错误", f"保存失败: {str(e)}")
+
+        self.log(f"保存当前结果图片：{file_path}")
 
     def _drawAndShowChart(self, fig):
         """将matplotlib图保存到内存中并显示到QLabel（不落盘）"""
@@ -521,6 +798,30 @@ class myWindow(QWidget, Ui_Dialog):
         fig.savefig(file_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
+    def exportLog(self):
+        """导出日志到txt文件"""
+        if not hasattr(self, "log_box") or self.log_box.toPlainText().strip() == "":
+            QMessageBox.warning(self, "提示", "当前没有日志内容可导出")
+            return
+
+        default_name = f"运行日志_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出日志", default_name, "Text Files (*.txt)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(self.log_box.toPlainText())
+
+            QMessageBox.information(self, "成功", f"日志已导出到：\n{file_path}")
+            self.log(f"日志导出成功：{file_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"导出失败：{str(e)}")
+
     def saveTrendChart(self, file_path):
         conf_list = []
         for item in self.detection_results:
@@ -547,6 +848,7 @@ class myWindow(QWidget, Ui_Dialog):
         """筛选类别改变"""
         self.filter_target = text
         QMessageBox.information(self, "筛选提示", f"当前筛选模式：{text}\n分拣将只显示该类别图片（全部显示则不筛选）")
+        self.log(f"筛选模式切换为：{text}")
 
     def getFilteredResults(self):
         """获取当前筛选模式下的结果列表"""
@@ -585,6 +887,9 @@ class myWindow(QWidget, Ui_Dialog):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+
+    apply_stylesheet(app, theme='light_cyan.xml')  # ✅ 你也可以换 dark_blue.xml 等
+
     win = myWindow()
     win.show()
     sys.exit(app.exec())
